@@ -70,47 +70,60 @@ Google Sheets، به‌طوری که:
   `float` است.
 
 ## تست شده
-- هنوز تست نشده — منتظر کلید Service Account و آیدی شیت از کاربر.
-  بعد از اولین اجرای واقعی، نتیجه‌ی تست در همین بخش ثبت می‌شود.
+- CLI پایتون (`tools/inventory.py`): setup، add-warehouse، add-item،
+  stock-in، stock-out، transfer، check، low-stock، request-purchase همه با
+  داده‌ی واقعی روی شیت تست شدند و کار می‌کنند ✅
+- Apps Script API (`webapp/Code.gs`) و وب‌سایت GitHub Pages: تمام صفحات
+  (200 OK) و endpoint اصلی (`?action=warehouses`) تست شدند ✅
 
-## اپ وب (webapp/)
-علاوه بر CLI چت‌محور (`tools/inventory.py`)، یک اپ وب کامل با Google Apps
-Script ساخته شده که مستقیماً به همان شیت متصل است (Bound script) — بدون
-نیاز به سرور یا هاست جدا، و بدون نیاز به Service Account (چون اسکریپت Bound
-با هویت خود کاربر اجرا می‌شود و مستقیماً به شیت دسترسی دارد).
+## معماری اپ وب (نسخه‌ی دوم — جایگزین HtmlService اولیه)
+نسخه‌ی اول با HtmlService خود Apps Script ساخته شده بود، اما محدودیت ظاهری و
+سرعتی iframe sandbox آن قابل قبول نبود. معماری فعلی:
 
-- کد منبع: `webapp/Code.gs` (بک‌اند)، `webapp/Index.html`،
-  `webapp/Workshop.html`، `webapp/Admin.html`
-- **پنل کارگاه** (`?page=workshop&wh=<نام انبار>`): ثبت ورود/خروج کالا برای
-  همان انبار، جستجوی کالا در کل انبارها، ثبت درخواست خرید (با همان منطق چک
-  خودکار انبار دیگر قبل از خرید)
-- **پنل مدیریت** (`?page=admin`): دید کامل موجودی همه‌ی انبارها، گزارش
-  موجودی کم، مدیریت وضعیت درخواست‌های خرید، انتقال بین انبارها، افزودن
-  انبار/کالا جدید
-- دسترسی فعلی: «هرکسی که لینک را دارد» (بدون لاگین) — مشابه الگوی پروژه‌ی
-  `telegram daily workshop`. لینک هر انبار را فقط باید به همان کارگاه داد؛
-  لینک مدیریت را فقط به مدیر.
+- **بک‌اند (API)**: `webapp/Code.gs`، یک اسکریپت Bound به همان شیت موجودی،
+  دیپلوی‌شده به‌عنوان Web App. تمام عملیات (خواندن و نوشتن) فقط با درخواست
+  GET و پارامتر `action` انجام می‌شود (نه doPost) — چون Apps Script به
+  درخواست‌های OPTIONS (CORS preflight) پاسخ نمی‌دهد و GET ساده این مشکل را
+  ندارد. خروجی همیشه JSON با `{success, data}` یا `{success:false, error}`.
+  دقیقاً همان الگوی `GAS_URL?action=list&...` که در پروژه‌ی
+  `telegram daily workshop` استفاده شده.
+- **فرانت‌اند**: `docs/` (روی شاخه‌ی main, مسیر `/docs`) — سه صفحه‌ی استاتیک
+  (`index.html`, `workshop.html`, `admin.html`) + `assets/style.css` و
+  `assets/app.js` مشترک. هاست‌شده روی **GitHub Pages**، ریپوی
+  `Imanskat/workshop-inventory-app` (Public).
+  - آدرس زنده: https://imanskat.github.io/workshop-inventory-app/
+  - `assets/app.js` ثابت `API_BASE` را به آدرس Deploy شده‌ی Apps Script
+    اشاره می‌دهد.
+- **دیپلوی Apps Script** با `clasp` (نه کپی-پیست دستی): پروژه‌ی Apps Script
+  با `clasp create --type standalone --parentId <SPREADSHEET_ID>` به شیت
+  Bound شد (نکته: `--type sheets` به‌اشتباه شیت جدید می‌سازد؛ باید
+  `standalone` + parentId شیت موجود باشد). تغییرات بعدی با
+  `clasp push` و `clasp deploy -i <deploymentId>` (همان دیپلویمنت آی‌دی، تا
+  لینک API ثابت بماند) اعمال می‌شود.
+- **نکته‌ی الزامی یک‌باره**: بعد از اولین push/deploy، باید مالک اسکریپت
+  (همان اکانتی که با `clasp login` وارد شده) یک‌بار از ادیتور Apps Script
+  (script.google.com) یک تابع (مثلاً `listWarehouses`) را دستی Run کند و
+  Authorization را Allow کند — وگرنه حتی با `access: ANYONE_ANONYMOUS`،
+  درخواست‌های عمومی ۴۰۳ می‌گیرند (اسکریپت هنوز هیچ‌وقت برای دسترسی به شیت
+  مجوز نگرفته).
 
-### مراحل Deploy (یک‌بار، دستی توسط کاربر)
-1. شیت موجودی را باز کن → منوی **Extensions → Apps Script**
-2. در ادیتور Apps Script، فایل‌های `Code.gs`, `Index.html`, `Workshop.html`,
-   `Admin.html` را بساز (با همین اسم‌ها) و محتوای هرکدام را از پوشه‌ی
-   `webapp/` این پروژه کپی کن
-3. بالا راست → **Deploy → New deployment** → نوع: **Web app**
-4. Execute as: **Me**، Who has access: **Anyone with the link**
-5. Deploy → لینک Web App را کپی کن
-6. لینک پایه + `?page=workshop&wh=<نام دقیق انبار>` برای هر کارگاه، و
-   لینک پایه + `?page=admin` برای پنل مدیریت
+### ⚠️ ریسک امنیتی پذیرفته‌شده
+لینک API (`API_BASE` در `assets/app.js`) با `access: ANYONE_ANONYMOUS`
+دیپلوی شده و این فایل در ریپوی **عمومی** گیت‌هاب است — یعنی هرکسی که سورس
+رو ببیند می‌تواند بدون رمز موجودی را تغییر دهد، نه فقط کسانی که لینک اپ را
+از طرف ما گرفته‌اند. کاربر این ریسک را آگاهانه برای شروع پذیرفته (تصمیم
+2026-06-28). قدم بعدی پیشنهادی برای رفع این مشکل: اضافه کردن یک `token`
+ساده به همه‌ی درخواست‌ها که در Apps Script Properties بررسی شود (نه در
+سورس عمومی) — هنوز ساخته نشده.
 
 ### نکته نگه‌داری
 هر تغییری در منطق کسب‌وکار (مثلاً قوانین چک قبل از خرید) باید همزمان هم در
 `tools/inventory.py` هم در `webapp/Code.gs` اعمال شود — این دو مستقل از هم
-به یک منطق مشابه روی یک شیت پیاده‌سازی شده‌اند (یکی پایتون/چت‌محور، یکی
-Apps Script/وب‌محور)، کد مشترک ندارند.
+به یک منطق مشابه روی یک شیت پیاده‌سازی شده‌اند، کد مشترک ندارند.
 
 ## باقی‌مانده / مراحل بعدی پیشنهادی (نیاز به تأیید کاربر قبل از ساخت)
+- رمز/توکن ساده برای endpoint های نوشتنی (رفع ریسک امنیتی بالا)
 - هشدار خودکار موجودی کم (مثلاً تلگرام، مشابه `telegram daily workshop`)
 - پیش‌بینی مصرف بر اساس تاریخچه‌ی Transactions
 - مدیریت امانت/جابجایی ابزار (که برمی‌گردد، برخلاف مواد مصرفی)
 - مقایسه قیمت/تامین‌کننده قبلی هنگام خرید واقعی
-- محدود کردن دسترسی پنل‌ها با رمز/لاگین (در حال حاضر هرکسی با لینک دسترسی دارد)
