@@ -2,95 +2,63 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<title>مدیریت موجودی انبارهای کارگاه</title>
+<title>ورود — مدیریت موجودی انبارهای کارگاه</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/style.css">
+<style>
+  .login-wrap { display: flex; align-items: center; justify-content: center; min-height: 80vh; padding: 20px; }
+  .login-card { max-width: 380px; width: 100%; }
+  .login-card .logo { text-align: center; font-size: 32px; margin-bottom: 6px; }
+</style>
 </head>
 <body>
 
-<div class="topbar">
-  <div class="brand"><span class="dot"></span> موجودی کارگاه</div>
-  <div class="nav-links"><a href="admin.html">پنل مدیریت</a></div>
-</div>
+<div class="login-wrap">
+  <div class="card login-card">
+    <div class="logo">📦</div>
+    <div class="card-title" style="justify-content:center">مدیریت موجودی انبارهای کارگاه</div>
+    <div class="card-sub" style="text-align:center">برای ورود، یوزرنیم و پسوردتان را وارد کنید</div>
 
-<div class="wrap">
-  <div class="hero">
-    <h1>سیستم مدیریت موجودی انبارهای کارگاه</h1>
-    <p>یک تصویر واحد از موجودی همه‌ی انبارها — قبل از خرید جدید، اول چک کن.</p>
-  </div>
+    <label class="field-label">یوزرنیم</label>
+    <input id="username" autocomplete="username" placeholder="یوزرنیم">
 
-  <div class="grid">
-    <div class="card">
-      <div class="card-title"><span class="icon">🏭</span> ورود به پنل یک انبار</div>
-      <div class="card-sub">انبار خودتان را انتخاب کنید تا وارد پنل ثبت ورود/خروج شوید.</div>
-      <select id="whSelect"><option>در حال بارگذاری...</option></select>
-      <button class="btn btn-primary" id="goWorkshopBtn">ورود به پنل کارگاه</button>
-    </div>
+    <label class="field-label">پسورد</label>
+    <input id="password" type="password" autocomplete="current-password" placeholder="پسورد">
 
-    <div class="card">
-      <div class="card-title"><span class="icon">🛡️</span> پنل مدیریت</div>
-      <div class="card-sub">دید کامل همه‌ی انبارها، گزارش موجودی کم، مدیریت درخواست‌های خرید.</div>
-      <a class="btn btn-amber" href="admin.html">ورود به پنل مدیریت</a>
-    </div>
-
-    <div class="card">
-      <div class="card-title"><span class="icon">🔍</span> جستجوی سریع کالا</div>
-      <div class="card-sub">بدون نیاز به انتخاب انبار، موجودی یک کالا را در همه‌ی انبارها ببینید.</div>
-      <input id="searchInput" placeholder="مثلاً: پیچ ۸ میل" autocomplete="off">
-      <button class="btn btn-ghost" id="searchBtn">جستجو</button>
-      <table id="searchResults"><tbody></tbody></table>
-    </div>
+    <button class="btn btn-primary" id="loginBtn">ورود</button>
   </div>
 </div>
 
 <script src="assets/app.js"></script>
 <script>
-  async function loadWarehouses() {
-    const sel = document.getElementById("whSelect");
+  (function () {
+    const session = getSession();
+    if (session && session.token) {
+      window.location.href = session.role === "admin" ? "admin.html" : `workshop.html?wh=${encodeURIComponent(session.warehouse)}`;
+    }
+  })();
+
+  async function doLogin() {
+    const btn = document.getElementById("loginBtn");
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value;
+    if (!username || !password) return toast("یوزرنیم و پسورد را وارد کنید", "err");
+    setLoading(btn, true, "در حال ورود...");
     try {
-      const warehouses = await api("warehouses");
-      sel.innerHTML = "";
-      if (!warehouses.length) {
-        sel.innerHTML = '<option value="">هیچ انباری ثبت نشده</option>';
-        return;
-      }
-      warehouses.forEach((w) => {
-        const opt = document.createElement("option");
-        opt.value = w.name;
-        opt.textContent = w.name;
-        sel.appendChild(opt);
-      });
+      const data = await api("login", { username, password });
+      setSession(data);
+      toast("ورود موفق بود.", "ok");
+      window.location.href = data.role === "admin" ? "admin.html" : `workshop.html?wh=${encodeURIComponent(data.warehouse)}`;
     } catch (err) {
-      sel.innerHTML = '<option value="">خطا در بارگذاری</option>';
       toast(err.message, "err");
+      setLoading(btn, false);
     }
   }
 
-  document.getElementById("goWorkshopBtn").addEventListener("click", () => {
-    const wh = document.getElementById("whSelect").value;
-    if (!wh) return toast("ابتدا یک انبار انتخاب کنید", "err");
-    window.location.href = `workshop.html?wh=${encodeURIComponent(wh)}`;
-  });
-
-  document.getElementById("searchBtn").addEventListener("click", async () => {
-    const q = document.getElementById("searchInput").value.trim();
-    const tbody = document.querySelector("#searchResults tbody");
-    if (!q) return;
-    tbody.innerHTML = emptyRow(2, "در حال جستجو...");
-    try {
-      const rows = await api("search", { q });
-      tbody.innerHTML = rows.length
-        ? rows.map((r) => `<tr><td>${escapeHtml(r.warehouse)}</td><td>${escapeHtml(r.item)} — ${fmtQty(r.quantity)}</td></tr>`).join("")
-        : emptyRow(2, "چیزی پیدا نشد.");
-    } catch (err) {
-      tbody.innerHTML = "";
-      toast(err.message, "err");
-    }
-  });
-
-  loadWarehouses();
+  document.getElementById("loginBtn").addEventListener("click", doLogin);
+  document.getElementById("password").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
 </script>
 </body>
 </html>

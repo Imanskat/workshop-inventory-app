@@ -12,7 +12,7 @@
 
 <div class="topbar">
   <div class="brand"><span class="dot"></span> پنل کارگاه: <span id="whTitle">—</span></div>
-  <div class="nav-links"><a href="index.html">← خانه</a></div>
+  <div class="nav-links"><span id="userLabel"></span> <a href="#" onclick="logout()">خروج</a></div>
 </div>
 
 <div class="wrap">
@@ -78,9 +78,13 @@
 
 <script src="assets/app.js"></script>
 <script>
-  const WH = qs("wh");
-  document.getElementById("whTitle").textContent = WH || "نامشخص";
-  if (!WH) toast("انباری مشخص نشده — از صفحه‌ی اصلی وارد شوید.", "err");
+  const session = requireSession();
+  // کارگاه فقط به انبار خودش دسترسی دارد؛ مدیر می‌تواند با ?wh= هر انباری را ببیند
+  const WH = session && session.role === "admin" && qs("wh") ? qs("wh") : (session ? session.warehouse : "");
+  if (session) {
+    document.getElementById("whTitle").textContent = WH || "نامشخص";
+    document.getElementById("userLabel").textContent = session.username + " · ";
+  }
 
   async function loadStock() {
     const tbody = document.getElementById("stockBody");

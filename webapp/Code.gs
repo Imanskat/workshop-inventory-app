@@ -27,14 +27,34 @@ var SHEET_NAMES = {
   ITEMS: 'Items',
   STOCK: 'Stock',
   TRANSACTIONS: 'Transactions',
-  PURCHASE_REQUESTS: 'PurchaseRequests'
+  PURCHASE_REQUESTS: 'PurchaseRequests',
+  USERS: 'Users'
 };
+
+var SESSION_TTL_SECONDS = 6 * 60 * 60; // 6 ساعت — حداکثر طول عمر cache در Apps Script
+
+function AuthError(message) {
+  this.name = 'AuthError';
+  this.message = message;
+}
+AuthError.prototype = Object.create(Error.prototype);
 
 function getSheet_(name) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(name);
   if (!sheet) {
     throw new Error('تب «' + name + '» در شیت پیدا نشد. ابتدا با tools/inventory.py دستور setup را اجرا کن.');
+  }
+  return sheet;
+}
+
+/** تب Users شاید با ابزار پایتون ساخته نشده باشد (قابلیت جدیدتر) — اینجا خودکار می‌سازیمش */
+function getUsersSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAMES.USERS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAMES.USERS);
+    sheet.appendRow(['username', 'password_hash', 'role', 'warehouse']);
   }
   return sheet;
 }
@@ -79,56 +99,159 @@ function doGet(e) {
 
   try {
     var data;
+
+    if (action === 'login') {
+      data = login(p.username, p.password);
+      return jsonOut_({ success: true, data: data });
+    }
+
+    // همه‌ی action های دیگر نیاز به نشست معتبر دارند
+    var session = requireAuth_(p.token);
+
     switch (action) {
+      // ---- فقط خواندن، هر کاربر لاگین‌شده (مدیر یا کارگاه) ----
       case 'warehouses':
         data = listWarehouses();
-        break;
-      case 'addWarehouse':
-        data = addWarehouse(p.name, p.location, p.contact);
         break;
       case 'items':
         data = listItems();
         break;
-      case 'addItem':
-        data = addItem(p.name, p.unit, p.minStock, p.category);
-        break;
-      case 'stock':
-        data = getStockForWarehouse(p.warehouse);
-        break;
-      case 'allStock':
-        data = getAllStock();
-        break;
       case 'search':
         data = searchItemAcrossWarehouses(p.q);
         break;
-      case 'lowStock':
-        data = getLowStock(p.warehouse);
+
+      // ---- محدود به انبار خودِ کاربر (مدیر به همه دسترسی دارد) ----
+      case 'stock':
+        requireWarehouseAccess_(session, p.warehouse);
+        data = getStockForWarehouse(p.warehouse);
         break;
       case 'stockIn':
+        requireWarehouseAccess_(session, p.warehouse);
         data = stockIn(p.warehouse, p.item, p.qty, p.note);
         break;
       case 'stockOut':
+        requireWarehouseAccess_(session, p.warehouse);
         data = stockOut(p.warehouse, p.item, p.qty, p.note);
         break;
-      case 'transfer':
-        data = transferStock(p.from, p.to, p.item, p.qty, p.note);
-        break;
       case 'requestPurchase':
+        requireWarehouseAccess_(session, p.warehouse);
         data = requestPurchase(p.warehouse, p.item, p.qty, p.note, p.force === 'true');
         break;
+
+      // ---- فقط مدیر ----
+      case 'addWarehouse':
+        requireRole_(session, 'admin');
+        data = addWarehouse(p.name, p.location, p.contact);
+        break;
+      case 'addItem':
+        requireRole_(session, 'admin');
+        data = addItem(p.name, p.unit, p.minStock, p.category);
+        break;
+      case 'allStock':
+        requireRole_(session, 'admin');
+        data = getAllStock();
+        break;
+      case 'lowStock':
+        requireRole_(session, 'admin');
+        data = getLowStock(p.warehouse);
+        break;
+      case 'transfer':
+        requireRole_(session, 'admin');
+        data = transferStock(p.from, p.to, p.item, p.qty, p.note);
+        break;
       case 'requests':
+        requireRole_(session, 'admin');
         data = listPurchaseRequests(p.status);
         break;
       case 'updateRequestStatus':
+        requireRole_(session, 'admin');
         data = updatePurchaseRequestStatus(Number(p.row), p.status);
         break;
+      case 'addUser':
+        requireRole_(session, 'admin');
+        data = addUser(p.username, p.password, p.role, p.warehouse);
+        break;
+      case 'listUsers':
+        requireRole_(session, 'admin');
+        data = listUsers();
+        break;
+
       default:
         return jsonOut_({ success: false, error: 'عملیات ناشناخته: ' + action });
     }
     return jsonOut_({ success: true, data: data });
   } catch (err) {
+    if (err instanceof AuthError) {
+      return jsonOut_({ success: false, authError: true, error: err.message });
+    }
     return jsonOut_({ success: false, error: err.message });
   }
+}
+
+// ---------- Auth ----------
+
+function sha256Hex_(text) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8);
+  return bytes.map(function (b) {
+    var v = (b < 0 ? b + 256 : b).toString(16);
+    return v.length === 1 ? '0' + v : v;
+  }).join('');
+}
+
+function login(username, password) {
+  username = (username || '').trim();
+  if (!username || !password) throw new Error('یوزرنیم و پسورد الزامی است.');
+
+  var users = readRows_(getUsersSheet_());
+  var user = users.filter(function (u) { return norm_(u.username) === norm_(username); })[0];
+  if (!user || user.password_hash !== sha256Hex_(password)) {
+    throw new Error('یوزرنیم یا پسورد اشتباه است.');
+  }
+
+  var token = Utilities.getUuid();
+  var session = { username: user.username, role: user.role, warehouse: user.warehouse || '' };
+  CacheService.getScriptCache().put('session_' + token, JSON.stringify(session), SESSION_TTL_SECONDS);
+
+  return { token: token, username: session.username, role: session.role, warehouse: session.warehouse };
+}
+
+function requireAuth_(token) {
+  if (!token) throw new AuthError('نیاز به ورود دارید.');
+  var raw = CacheService.getScriptCache().get('session_' + token);
+  if (!raw) throw new AuthError('نشست شما منقضی شده، دوباره وارد شوید.');
+  return JSON.parse(raw);
+}
+
+function requireRole_(session, role) {
+  if (session.role !== role) throw new AuthError('شما به این بخش دسترسی ندارید.');
+}
+
+function requireWarehouseAccess_(session, warehouse) {
+  if (session.role === 'admin') return;
+  if (norm_(session.warehouse) !== norm_(warehouse)) {
+    throw new AuthError('شما فقط به انبار «' + session.warehouse + '» دسترسی دارید.');
+  }
+}
+
+function addUser(username, password, role, warehouse) {
+  username = (username || '').trim();
+  if (!username || !password) throw new Error('یوزرنیم و پسورد الزامی است.');
+  if (role !== 'admin' && role !== 'workshop') throw new Error('نقش باید admin یا workshop باشد.');
+  if (role === 'workshop' && !warehouse) throw new Error('برای نقش workshop، انتخاب انبار الزامی است.');
+
+  var sheet = getUsersSheet_();
+  var existing = readRows_(sheet);
+  if (existing.some(function (u) { return norm_(u.username) === norm_(username); })) {
+    throw new Error('یوزرنیم «' + username + '» قبلاً ثبت شده است.');
+  }
+  sheet.appendRow([username, sha256Hex_(password), role, role === 'workshop' ? warehouse : '']);
+  return { ok: true };
+}
+
+function listUsers() {
+  return readRows_(getUsersSheet_()).map(function (u) {
+    return { username: u.username, role: u.role, warehouse: u.warehouse };
+  });
 }
 
 // ---------- Warehouses ----------

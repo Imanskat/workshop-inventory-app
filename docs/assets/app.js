@@ -1,12 +1,53 @@
 // app.js — لایه‌ی مشترک ارتباط با API (Apps Script) برای همه‌ی صفحات
 
 const API_BASE = "https://script.google.com/macros/s/AKfycbypLxCtrFW8zGrwiJpVLwhBF0B9FSHz_k-2AkxsqFl4aRTWfjsIRv3_QM-aw8rqKNub/exec";
+const SESSION_KEY = "inv_session";
+
+function getSession() {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_KEY));
+  } catch (e) {
+    return null;
+  }
+}
+
+function setSession(session) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+function logout() {
+  clearSession();
+  window.location.href = "index.html";
+}
+
+/** اگر نشست نیست، به صفحه‌ی ورود برمی‌گرداند؛ وگرنه مقدار نشست را برمی‌گرداند. */
+function requireSession() {
+  const session = getSession();
+  if (!session || !session.token) {
+    window.location.href = "index.html";
+    return null;
+  }
+  return session;
+}
 
 async function api(action, params = {}) {
-  const qs = new URLSearchParams({ action, ...params });
-  const res = await fetch(`${API_BASE}?${qs.toString()}`);
+  const session = getSession();
+  const query = new URLSearchParams({ action, ...params });
+  if (session && session.token && action !== "login") query.set("token", session.token);
+
+  const res = await fetch(`${API_BASE}?${query.toString()}`);
   const json = await res.json();
-  if (!json.success) throw new Error(json.error || "خطای نامشخص از سرور");
+  if (!json.success) {
+    if (json.authError) {
+      clearSession();
+      window.location.href = "index.html";
+    }
+    throw new Error(json.error || "خطای نامشخص از سرور");
+  }
   return json.data;
 }
 

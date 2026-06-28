@@ -12,7 +12,7 @@
 
 <div class="topbar">
   <div class="brand"><span class="dot" style="background:#f5a524;box-shadow:0 0 12px #f5a524"></span> پنل مدیریت</div>
-  <div class="nav-links"><a href="index.html">← خانه</a></div>
+  <div class="nav-links"><span id="userLabel"></span> <a href="#" onclick="logout()">خروج</a></div>
 </div>
 
 <div class="wrap">
@@ -91,6 +91,23 @@
       <button class="btn btn-amber" id="itemBtn">افزودن کالا</button>
     </div>
 
+    <div class="card">
+      <div class="card-title"><span class="icon">👤</span> افزودن کاربر (لاگین انبار/مدیر)</div>
+      <label class="field-label">یوزرنیم</label>
+      <input id="userUsername" placeholder="یوزرنیم">
+      <label class="field-label">پسورد</label>
+      <input id="userPassword" type="password" placeholder="پسورد">
+      <label class="field-label">نقش</label>
+      <select id="userRole">
+        <option value="workshop">کارگاه (دسترسی فقط به یک انبار)</option>
+        <option value="admin">مدیر (دسترسی کامل)</option>
+      </select>
+      <label class="field-label">انبار (فقط برای نقش کارگاه)</label>
+      <select id="userWarehouse"></select>
+      <button class="btn btn-amber" id="userBtn">افزودن کاربر</button>
+      <table><thead><tr><th>یوزرنیم</th><th>نقش</th><th>انبار</th></tr></thead><tbody id="usersBody"></tbody></table>
+    </div>
+
   </div>
 </div>
 
@@ -98,6 +115,14 @@
 
 <script src="assets/app.js"></script>
 <script>
+  const session = requireSession();
+  if (session && session.role !== "admin") {
+    toast("شما به پنل مدیریت دسترسی ندارید.", "err");
+    window.location.href = `workshop.html?wh=${encodeURIComponent(session.warehouse)}`;
+  } else if (session) {
+    document.getElementById("userLabel").textContent = session.username + " · ";
+  }
+
   async function loadAllStock() {
     const tbody = document.getElementById("allStockBody");
     tbody.innerHTML = '<tr><td colspan="3" class="empty-row">در حال بارگذاری...</td></tr>';
@@ -154,10 +179,20 @@
   async function loadWarehousesIntoSelects() {
     try {
       const warehouses = await api("warehouses");
-      ["trFrom", "trTo"].forEach((id) => {
+      ["trFrom", "trTo", "userWarehouse"].forEach((id) => {
         const sel = document.getElementById(id);
         sel.innerHTML = warehouses.map((w) => `<option value="${escapeHtml(w.name)}">${escapeHtml(w.name)}</option>`).join("");
       });
+    } catch (err) { toast(err.message, "err"); }
+  }
+
+  async function loadUsers() {
+    const tbody = document.getElementById("usersBody");
+    try {
+      const users = await api("listUsers");
+      tbody.innerHTML = users.length
+        ? users.map((u) => `<tr><td>${escapeHtml(u.username)}</td><td>${escapeHtml(u.role)}</td><td>${escapeHtml(u.warehouse || "—")}</td></tr>`).join("")
+        : emptyRow(3, "کاربری ثبت نشده.");
     } catch (err) { toast(err.message, "err"); }
   }
 
@@ -230,11 +265,34 @@
     setLoading(btn, false);
   });
 
+  document.getElementById("userRole").addEventListener("change", (e) => {
+    document.getElementById("userWarehouse").style.display = e.target.value === "admin" ? "none" : "block";
+  });
+
+  document.getElementById("userBtn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const username = document.getElementById("userUsername").value.trim();
+    const password = document.getElementById("userPassword").value;
+    const role = document.getElementById("userRole").value;
+    const warehouse = document.getElementById("userWarehouse").value;
+    if (!username || !password) return toast("یوزرنیم و پسورد را وارد کنید", "err");
+    setLoading(btn, true);
+    try {
+      await api("addUser", { username, password, role, warehouse });
+      toast("کاربر افزوده شد.", "ok");
+      document.getElementById("userUsername").value = "";
+      document.getElementById("userPassword").value = "";
+      loadUsers();
+    } catch (err) { toast(err.message, "err"); }
+    setLoading(btn, false);
+  });
+
   loadAllStock();
   loadLowStock();
   loadRequests();
   loadWarehousesIntoSelects();
   loadItemsDatalist();
+  loadUsers();
 </script>
 </body>
 </html>
