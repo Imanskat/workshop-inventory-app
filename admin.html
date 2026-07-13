@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>پنل مدیریت موجودی</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="dot" style="background:#f5a524;box-shadow:0 0 12px #f5a524"></span> پنل مدیریت</div>
+  <div class="nav-links"><span id="userLabel"></span> <a href="#" onclick="logout()">خروج</a></div>
+</div>
+
+<div class="wrap">
+
+  <div class="section-title">موجودی همه‌ی انبارها</div>
+  <div class="card">
+    <button class="btn btn-ghost btn-sm" id="refreshAllStockBtn">🔄 بروزرسانی</button>
+    <table>
+      <thead><tr><th>انبار</th><th>کالا</th><th>تعداد</th></tr></thead>
+      <tbody id="allStockBody"><tr><td colspan="3" class="empty-row">در حال بارگذاری...</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">گزارش موجودی کم</div>
+  <div class="card">
+    <button class="btn btn-ghost btn-sm" id="refreshLowStockBtn">🔄 بروزرسانی</button>
+    <table>
+      <thead><tr><th>انبار</th><th>کالا</th><th>تعداد</th><th>حداقل</th></tr></thead>
+      <tbody id="lowStockBody"><tr><td colspan="4" class="empty-row">در حال بارگذاری...</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">درخواست‌های خرید</div>
+  <div class="card">
+    <select id="reqStatusFilter" style="max-width:200px">
+      <option value="">همه وضعیت‌ها</option>
+      <option value="pending">در انتظار</option>
+      <option value="fulfilled">تامین‌شده</option>
+      <option value="ordered">سفارش‌شده</option>
+    </select>
+    <table>
+      <thead><tr><th>تاریخ</th><th>انبار</th><th>کالا</th><th>تعداد</th><th>وضعیت</th><th>عملیات</th></tr></thead>
+      <tbody id="reqBody"><tr><td colspan="6" class="empty-row">در حال بارگذاری...</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">عملیات مدیریتی</div>
+  <div class="grid">
+
+    <div class="card">
+      <div class="card-title"><span class="icon">🔄</span> انتقال بین انبارها</div>
+      <label class="field-label">از انبار</label>
+      <select id="trFrom"></select>
+      <label class="field-label">به انبار</label>
+      <select id="trTo"></select>
+      <label class="field-label">کالا</label>
+      <input id="trItem" list="itemsDatalist" placeholder="نام کالا">
+      <label class="field-label">تعداد</label>
+      <input id="trQty" type="number" min="0" step="any">
+      <label class="field-label">توضیح (اختیاری)</label>
+      <input id="trNote" placeholder="توضیح">
+      <button class="btn btn-primary" id="trBtn">انتقال</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="icon">🏭</span> افزودن انبار جدید</div>
+      <label class="field-label">نام انبار</label>
+      <input id="whName" placeholder="مثلاً انبار کارگاه ۳">
+      <label class="field-label">محل (اختیاری)</label>
+      <input id="whLoc" placeholder="شهر/آدرس">
+      <label class="field-label">تماس (اختیاری)</label>
+      <input id="whContact" placeholder="شماره تماس مسئول">
+      <button class="btn btn-amber" id="whBtn">افزودن انبار</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="icon">📦</span> افزودن کالا به کاتالوگ</div>
+      <label class="field-label">نام کالا</label>
+      <input id="itemName" placeholder="نام کالا">
+      <label class="field-label">واحد (اختیاری)</label>
+      <input id="itemUnit" placeholder="عدد / متر / کیلوگرم">
+      <label class="field-label">حداقل موجودی (اختیاری)</label>
+      <input id="itemMin" type="number" min="0" step="any">
+      <label class="field-label">دسته‌بندی (اختیاری)</label>
+      <input id="itemCat" placeholder="مثلاً یراق">
+      <button class="btn btn-amber" id="itemBtn">افزودن کالا</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="icon">👤</span> افزودن کاربر (لاگین انبار/مدیر)</div>
+      <label class="field-label">یوزرنیم</label>
+      <input id="userUsername" placeholder="یوزرنیم">
+      <label class="field-label">پسورد</label>
+      <input id="userPassword" type="password" placeholder="پسورد">
+      <label class="field-label">نقش</label>
+      <select id="userRole">
+        <option value="workshop">کارگاه (دسترسی فقط به یک انبار)</option>
+        <option value="admin">مدیر (دسترسی کامل)</option>
+      </select>
+      <label class="field-label">انبار (فقط برای نقش کارگاه)</label>
+      <select id="userWarehouse"></select>
+      <button class="btn btn-amber" id="userBtn">افزودن کاربر</button>
+      <table><thead><tr><th>یوزرنیم</th><th>نقش</th><th>انبار</th></tr></thead><tbody id="usersBody"></tbody></table>
+    </div>
+
+  </div>
+</div>
+
+<datalist id="itemsDatalist"></datalist>
+
+<script src="assets/app.js"></script>
+<script>
+  const session = requireSession();
+  if (session && session.role !== "admin") {
+    toast("شما به پنل مدیریت دسترسی ندارید.", "err");
+    window.location.href = `workshop.html?wh=${encodeURIComponent(session.warehouse)}`;
+  } else if (session) {
+    document.getElementById("userLabel").textContent = session.username + " · ";
+  }
+
+  async function loadAllStock() {
+    const tbody = document.getElementById("allStockBody");
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-row">در حال بارگذاری...</td></tr>';
+    try {
+      const rows = await api("allStock");
+      tbody.innerHTML = rows.length
+        ? rows.map((r) => `<tr><td>${escapeHtml(r.warehouse)}</td><td>${escapeHtml(r.item)}</td><td>${fmtQty(r.quantity)}</td></tr>`).join("")
+        : emptyRow(3, "هنوز موجودی‌ای ثبت نشده.");
+    } catch (err) { tbody.innerHTML = ""; toast(err.message, "err"); }
+  }
+
+  async function loadLowStock() {
+    const tbody = document.getElementById("lowStockBody");
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-row">در حال بارگذاری...</td></tr>';
+    try {
+      const rows = await api("lowStock", { warehouse: "" });
+      tbody.innerHTML = rows.length
+        ? rows.map((r) => `<tr><td>${escapeHtml(r.warehouse)}</td><td>${escapeHtml(r.item)}</td><td>${fmtQty(r.quantity)}</td><td>${fmtQty(r.minStock)}</td></tr>`).join("")
+        : emptyRow(4, "هیچ کالایی زیر حداقل موجودی نیست.");
+    } catch (err) { tbody.innerHTML = ""; toast(err.message, "err"); }
+  }
+
+  async function loadRequests() {
+    const status = document.getElementById("reqStatusFilter").value;
+    const tbody = document.getElementById("reqBody");
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-row">در حال بارگذاری...</td></tr>';
+    try {
+      const rows = await api("requests", { status });
+      tbody.innerHTML = rows.length
+        ? rows.map((r) => `
+          <tr>
+            <td>${new Date(r.timestamp).toLocaleDateString("fa-IR")}</td>
+            <td>${escapeHtml(r.warehouse)}</td>
+            <td>${escapeHtml(r.item)}</td>
+            <td>${fmtQty(r.quantity)}</td>
+            <td><span class="badge ${r.status === "pending" ? "badge-pending" : "badge-done"}">${escapeHtml(r.status)}</span></td>
+            <td>
+              <button class="btn btn-ghost btn-sm" onclick="setReqStatus(${r.row}, 'fulfilled')">تامین شد</button>
+              <button class="btn btn-ghost btn-sm" onclick="setReqStatus(${r.row}, 'ordered')">سفارش شد</button>
+            </td>
+          </tr>`).join("")
+        : emptyRow(6, "درخواستی پیدا نشد.");
+    } catch (err) { tbody.innerHTML = ""; toast(err.message, "err"); }
+  }
+
+  async function setReqStatus(row, status) {
+    try {
+      await api("updateRequestStatus", { row, status });
+      toast("وضعیت بروزرسانی شد.", "ok");
+      loadRequests();
+    } catch (err) { toast(err.message, "err"); }
+  }
+
+  async function loadWarehousesIntoSelects() {
+    try {
+      const warehouses = await api("warehouses");
+      ["trFrom", "trTo", "userWarehouse"].forEach((id) => {
+        const sel = document.getElementById(id);
+        sel.innerHTML = warehouses.map((w) => `<option value="${escapeHtml(w.name)}">${escapeHtml(w.name)}</option>`).join("");
+      });
+    } catch (err) { toast(err.message, "err"); }
+  }
+
+  async function loadUsers() {
+    const tbody = document.getElementById("usersBody");
+    try {
+      const users = await api("listUsers");
+      tbody.innerHTML = users.length
+        ? users.map((u) => `<tr><td>${escapeHtml(u.username)}</td><td>${escapeHtml(u.role)}</td><td>${escapeHtml(u.warehouse || "—")}</td></tr>`).join("")
+        : emptyRow(3, "کاربری ثبت نشده.");
+    } catch (err) { toast(err.message, "err"); }
+  }
+
+  async function loadItemsDatalist() {
+    try {
+      const items = await api("items");
+      document.getElementById("itemsDatalist").innerHTML = items.map((i) => `<option value="${escapeHtml(i.name)}">`).join("");
+    } catch (err) { /* غیربحرانی */ }
+  }
+
+  document.getElementById("refreshAllStockBtn").addEventListener("click", loadAllStock);
+  document.getElementById("refreshLowStockBtn").addEventListener("click", loadLowStock);
+  document.getElementById("reqStatusFilter").addEventListener("change", loadRequests);
+
+  document.getElementById("trBtn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const from = document.getElementById("trFrom").value;
+    const to = document.getElementById("trTo").value;
+    const item = document.getElementById("trItem").value.trim();
+    const qty = document.getElementById("trQty").value;
+    const note = document.getElementById("trNote").value;
+    if (!from || !to || !item || !qty) return toast("همه‌ی فیلدهای الزامی را پر کنید", "err");
+    setLoading(btn, true);
+    try {
+      const res = await api("transfer", { from, to, item, qty, note });
+      toast(`انتقال انجام شد — موجودی جدید مقصد: ${fmtQty(res.newQtyDest)}`, "ok");
+      document.getElementById("trItem").value = "";
+      document.getElementById("trQty").value = "";
+      document.getElementById("trNote").value = "";
+      loadAllStock();
+    } catch (err) { toast(err.message, "err"); }
+    setLoading(btn, false);
+  });
+
+  document.getElementById("whBtn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const name = document.getElementById("whName").value.trim();
+    if (!name) return toast("نام انبار را وارد کنید", "err");
+    setLoading(btn, true);
+    try {
+      await api("addWarehouse", { name, location: document.getElementById("whLoc").value, contact: document.getElementById("whContact").value });
+      toast("انبار افزوده شد.", "ok");
+      document.getElementById("whName").value = "";
+      document.getElementById("whLoc").value = "";
+      document.getElementById("whContact").value = "";
+      loadWarehousesIntoSelects();
+    } catch (err) { toast(err.message, "err"); }
+    setLoading(btn, false);
+  });
+
+  document.getElementById("itemBtn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const name = document.getElementById("itemName").value.trim();
+    if (!name) return toast("نام کالا را وارد کنید", "err");
+    setLoading(btn, true);
+    try {
+      await api("addItem", {
+        name,
+        unit: document.getElementById("itemUnit").value,
+        minStock: document.getElementById("itemMin").value || 0,
+        category: document.getElementById("itemCat").value
+      });
+      toast("کالا افزوده شد.", "ok");
+      document.getElementById("itemName").value = "";
+      document.getElementById("itemUnit").value = "";
+      document.getElementById("itemMin").value = "";
+      document.getElementById("itemCat").value = "";
+      loadItemsDatalist();
+    } catch (err) { toast(err.message, "err"); }
+    setLoading(btn, false);
+  });
+
+  document.getElementById("userRole").addEventListener("change", (e) => {
+    document.getElementById("userWarehouse").style.display = e.target.value === "admin" ? "none" : "block";
+  });
+
+  document.getElementById("userBtn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const username = document.getElementById("userUsername").value.trim();
+    const password = document.getElementById("userPassword").value;
+    const role = document.getElementById("userRole").value;
+    const warehouse = document.getElementById("userWarehouse").value;
+    if (!username || !password) return toast("یوزرنیم و پسورد را وارد کنید", "err");
+    setLoading(btn, true);
+    try {
+      await api("addUser", { username, password, role, warehouse });
+      toast("کاربر افزوده شد.", "ok");
+      document.getElementById("userUsername").value = "";
+      document.getElementById("userPassword").value = "";
+      loadUsers();
+    } catch (err) { toast(err.message, "err"); }
+    setLoading(btn, false);
+  });
+
+  loadAllStock();
+  loadLowStock();
+  loadRequests();
+  loadWarehousesIntoSelects();
+  loadItemsDatalist();
+  loadUsers();
+</script>
+</body>
+</html>

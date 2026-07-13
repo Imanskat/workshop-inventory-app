@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>پنل کارگاه</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="dot"></span> پنل کارگاه: <span id="whTitle">—</span></div>
+  <div class="nav-links"><span id="userLabel"></span> <a href="#" onclick="logout()">خروج</a></div>
+</div>
+
+<div class="wrap">
+
+  <div class="section-title">موجودی فعلی این انبار</div>
+  <div class="card">
+    <button class="btn btn-ghost btn-sm" id="refreshStockBtn">🔄 بروزرسانی</button>
+    <table>
+      <thead><tr><th>کالا</th><th>تعداد</th></tr></thead>
+      <tbody id="stockBody"><tr><td colspan="2" class="empty-row">در حال بارگذاری...</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">عملیات</div>
+  <div class="grid">
+
+    <div class="card">
+      <div class="card-title"><span class="icon">📥</span> ثبت ورود کالا</div>
+      <label class="field-label">نام کالا</label>
+      <input id="inItem" placeholder="مثلاً پیچ ۸ میل" list="itemsDatalist">
+      <label class="field-label">تعداد</label>
+      <input id="inQty" type="number" min="0" step="any">
+      <label class="field-label">توضیح (اختیاری)</label>
+      <input id="inNote" placeholder="مثلاً بازگشت از کارگاه ۲">
+      <button class="btn btn-primary" id="inBtn">ثبت ورود</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="icon">📤</span> ثبت خروج / مصرف کالا</div>
+      <label class="field-label">نام کالا</label>
+      <input id="outItem" placeholder="مثلاً پیچ ۸ میل" list="itemsDatalist">
+      <label class="field-label">تعداد</label>
+      <input id="outQty" type="number" min="0" step="any">
+      <label class="field-label">توضیح (اختیاری)</label>
+      <input id="outNote" placeholder="مثلاً مصرف پروژه X">
+      <button class="btn btn-danger" id="outBtn">ثبت خروج</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="icon">🔍</span> جستجو در همه‌ی انبارها</div>
+      <label class="field-label">نام کالا</label>
+      <input id="searchItem" placeholder="بخشی از نام کافی است">
+      <button class="btn btn-ghost" id="searchBtn">جستجو</button>
+      <table><tbody id="searchBody"></tbody></table>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="icon">🛒</span> درخواست خرید جدید</div>
+      <label class="field-label">نام کالا</label>
+      <input id="reqItem" placeholder="نام کالا" list="itemsDatalist">
+      <label class="field-label">تعداد مورد نیاز</label>
+      <input id="reqQty" type="number" min="0" step="any">
+      <label class="field-label">توضیح (اختیاری)</label>
+      <input id="reqNote" placeholder="توضیح">
+      <button class="btn btn-amber" id="reqBtn">ثبت درخواست خرید</button>
+      <div id="reqSuggestion"></div>
+    </div>
+
+  </div>
+</div>
+
+<datalist id="itemsDatalist"></datalist>
+
+<script src="assets/app.js"></script>
+<script>
+  const session = requireSession();
+  // کارگاه فقط به انبار خودش دسترسی دارد؛ مدیر می‌تواند با ?wh= هر انباری را ببیند
+  const WH = session && session.role === "admin" && qs("wh") ? qs("wh") : (session ? session.warehouse : "");
+  if (session) {
+    document.getElementById("whTitle").textContent = WH || "نامشخص";
+    document.getElementById("userLabel").textContent = session.username + " · ";
+  }
+
+  async function loadStock() {
+    const tbody = document.getElementById("stockBody");
+    tbody.innerHTML = '<tr><td colspan="2" class="empty-row">در حال بارگذاری...</td></tr>';
+    try {
+      const rows = await api("stock", { warehouse: WH });
+      tbody.innerHTML = rows.length
+        ? rows.map((r) => `<tr><td>${escapeHtml(r.item)}</td><td>${fmtQty(r.quantity)}</td></tr>`).join("")
+        : emptyRow(2, "هنوز کالایی در این انبار ثبت نشده.");
+    } catch (err) {
+      tbody.innerHTML = "";
+      toast(err.message, "err");
+    }
+  }
+
+  async function loadItemsDatalist() {
+    try {
+      const items = await api("items");
+      const dl = document.getElementById("itemsDatalist");
+      dl.innerHTML = items.map((i) => `<option value="${escapeHtml(i.name)}">`).join("");
+    } catch (err) { /* غیربحرانی */ }
+  }
+
+  document.getElementById("refreshStockBtn").addEventListener("click", loadStock);
+
+  document.getElementById("inBtn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const item = document.getElementById("inItem").value.trim();
+    const qty = document.getElementById("inQty").value;
+    const note = document.getElementById("inNote").value;
+    if (!item || !qty) return toast("نام کالا و تعداد را وارد کنید", "err");
+    setLoading(btn, true);
+    try {
+      const res = await api("stockIn", { warehouse: WH, item, qty, note });
+      toast(`ثبت شد — موجودی جدید: ${fmtQty(res.newQty)}`, "ok");
+      document.getElementById("inItem").value = "";
+      document.getElementById("inQty").value = "";
+      document.getElementById("inNote").value = "";
+      loadStock();
+    } catch (err) { toast(err.message, "err"); }
+    setLoading(btn, false);
+  });
+
+  document.getElementById("outBtn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const item = document.getElementById("outItem").value.trim();
+    const qty = document.getElementById("outQty").value;
+    const note = document.getElementById("outNote").value;
+    if (!item || !qty) return toast("نام کالا و تعداد را وارد کنید", "err");
+    setLoading(btn, true);
+    try {
+      const res = await api("stockOut", { warehouse: WH, item, qty, note });
+      toast(`ثبت شد — موجودی جدید: ${fmtQty(res.newQty)}`, "ok");
+      document.getElementById("outItem").value = "";
+      document.getElementById("outQty").value = "";
+      document.getElementById("outNote").value = "";
+      loadStock();
+    } catch (err) { toast(err.message, "err"); }
+    setLoading(btn, false);
+  });
+
+  document.getElementById("searchBtn").addEventListener("click", async () => {
+    const q = document.getElementById("searchItem").value.trim();
+    const tbody = document.getElementById("searchBody");
+    if (!q) return;
+    tbody.innerHTML = emptyRow(2, "در حال جستجو...");
+    try {
+      const rows = await api("search", { q });
+      tbody.innerHTML = rows.length
+        ? rows.map((r) => `<tr><td>${escapeHtml(r.warehouse)}</td><td>${escapeHtml(r.item)} — ${fmtQty(r.quantity)}</td></tr>`).join("")
+        : emptyRow(2, "چیزی پیدا نشد.");
+    } catch (err) { tbody.innerHTML = ""; toast(err.message, "err"); }
+  });
+
+  let pendingForce = false;
+  document.getElementById("reqBtn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const item = document.getElementById("reqItem").value.trim();
+    const qty = document.getElementById("reqQty").value;
+    const note = document.getElementById("reqNote").value;
+    const box = document.getElementById("reqSuggestion");
+    if (!item || !qty) return toast("نام کالا و تعداد را وارد کنید", "err");
+    setLoading(btn, true);
+    try {
+      const res = await api("requestPurchase", { warehouse: WH, item, qty, note, force: pendingForce ? "true" : "false" });
+      if (res.ok === false) {
+        box.innerHTML = `<div class="suggestion-box">این کالا در انبار دیگری موجود است:
+          <ul>${res.suggestion.map((s) => `<li>${escapeHtml(s.warehouse)}: ${fmtQty(s.quantity)} عدد</li>`).join("")}</ul>
+          به‌جای خرید، انتقال داخلی پیشنهاد می‌شود. اگر با این حال باید خرید ثبت شود، دوباره دکمه را بزنید.</div>`;
+        pendingForce = true;
+      } else {
+        toast("درخواست خرید ثبت شد.", "ok");
+        box.innerHTML = "";
+        pendingForce = false;
+        document.getElementById("reqItem").value = "";
+        document.getElementById("reqQty").value = "";
+        document.getElementById("reqNote").value = "";
+      }
+    } catch (err) { toast(err.message, "err"); }
+    setLoading(btn, false);
+  });
+
+  if (WH) { loadStock(); loadItemsDatalist(); }
+</script>
+</body>
+</html>
