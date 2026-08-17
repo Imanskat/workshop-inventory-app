@@ -8,16 +8,19 @@ inventory.py
 انتقال بین انبارها، جستجوی کالا در همه‌ی انبارها، گزارش موجودی کم، و
 درخواست خرید با چک خودکار انبارهای دیگر قبل از خرید جدید.
 
+محل نگهداری پیش‌فرض «انبار شماره ۱» است: هر دستوری که --warehouse نگیرد،
+روی همین انبار ثبت می‌شود.
+
 Usage:
     python tools/inventory.py setup
     python tools/inventory.py add-warehouse --name "انبار مرکزی" --location "..." --contact "..."
     python tools/inventory.py add-item --name "پیچ ۸ میل" --unit "عدد" --min-stock 50 --category "یراق"
-    python tools/inventory.py stock-in --warehouse "انبار مرکزی" --item "پیچ ۸ میل" --qty 100 --note "بازگشت از کارگاه ۲"
-    python tools/inventory.py stock-out --warehouse "انبار مرکزی" --item "پیچ ۸ میل" --qty 10 --note "مصرف کارگاه ۱"
-    python tools/inventory.py transfer --from "انبار مرکزی" --to "انبار ۲" --item "پیچ ۸ میل" --qty 20
+    python tools/inventory.py stock-in --item "پیچ ۸ میل" --qty 100 --note "بازگشت از کارگاه ۲"
+    python tools/inventory.py stock-out --item "پیچ ۸ میل" --qty 10 --note "مصرف کارگاه ۱"
+    python tools/inventory.py transfer --to "انبار ۲" --item "پیچ ۸ میل" --qty 20
     python tools/inventory.py check --item "پیچ"
     python tools/inventory.py low-stock
-    python tools/inventory.py request-purchase --warehouse "انبار ۲" --item "پیچ ۸ میل" --qty 30
+    python tools/inventory.py request-purchase --item "پیچ ۸ میل" --qty 30
     python tools/inventory.py list-requests --status pending
 """
 
@@ -25,7 +28,16 @@ import argparse
 import sys
 from datetime import datetime
 
-from sheets_client import InventoryError, ensure_all_sheets, ensure_sheet, get_records, load_env, open_spreadsheet
+from sheets_client import (
+    DEFAULT_WAREHOUSE,
+    InventoryError,
+    ensure_all_sheets,
+    ensure_default_warehouse,
+    ensure_sheet,
+    get_records,
+    load_env,
+    open_spreadsheet,
+)
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -58,6 +70,14 @@ def cmd_setup(env, args):
     spreadsheet = open_spreadsheet(env)
     ensure_all_sheets(spreadsheet)
     print("ساختار شیت موجودی (Warehouses, Items, Stock, Transactions, PurchaseRequests) آماده شد.")
+    print(f"محل نگهداری پیش‌فرض: «{DEFAULT_WAREHOUSE}»")
+
+
+def ensure_warehouse_registered(spreadsheet, warehouse: str) -> None:
+    """انبار پیش‌فرض باید همیشه در تب Warehouses باشد تا در لیست‌ها و پنل وب دیده شود."""
+    if norm(warehouse) != norm(DEFAULT_WAREHOUSE):
+        return
+    ensure_default_warehouse(ensure_sheet(spreadsheet, "Warehouses"))
 
 
 def cmd_add_warehouse(env, args):
@@ -112,6 +132,7 @@ def upsert_stock(ws, records: list, warehouse: str, item: str, delta: float) -> 
 
 def cmd_stock_in(env, args):
     spreadsheet = open_spreadsheet(env)
+    ensure_warehouse_registered(spreadsheet, args.warehouse)
     stock_ws = ensure_sheet(spreadsheet, "Stock")
     tx_ws = ensure_sheet(spreadsheet, "Transactions")
     records = get_records(stock_ws)
@@ -122,6 +143,7 @@ def cmd_stock_in(env, args):
 
 def cmd_stock_out(env, args):
     spreadsheet = open_spreadsheet(env)
+    ensure_warehouse_registered(spreadsheet, args.warehouse)
     stock_ws = ensure_sheet(spreadsheet, "Stock")
     tx_ws = ensure_sheet(spreadsheet, "Transactions")
     records = get_records(stock_ws)
@@ -134,6 +156,8 @@ def cmd_transfer(env, args):
     if norm(args.from_wh) == norm(args.to_wh):
         raise InventoryError("انبار مبدا و مقصد نمی‌توانند یکسان باشند.")
     spreadsheet = open_spreadsheet(env)
+    ensure_warehouse_registered(spreadsheet, args.from_wh)
+    ensure_warehouse_registered(spreadsheet, args.to_wh)
     stock_ws = ensure_sheet(spreadsheet, "Stock")
     tx_ws = ensure_sheet(spreadsheet, "Transactions")
 
@@ -193,6 +217,7 @@ def cmd_low_stock(env, args):
 
 def cmd_request_purchase(env, args):
     spreadsheet = open_spreadsheet(env)
+    ensure_warehouse_registered(spreadsheet, args.warehouse)
     stock_ws = ensure_sheet(spreadsheet, "Stock")
     pr_ws = ensure_sheet(spreadsheet, "PurchaseRequests")
 
@@ -257,21 +282,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_add_item)
 
     p = sub.add_parser("stock-in", help="ثبت ورود کالا به انبار")
-    p.add_argument("--warehouse", required=True)
+    p.add_argument("--warehouse", default=DEFAULT_WAREHOUSE, help=f"پیش‌فرض: {DEFAULT_WAREHOUSE}")
     p.add_argument("--item", required=True)
     p.add_argument("--qty", type=float, required=True)
     p.add_argument("--note", default="")
     p.set_defaults(func=cmd_stock_in)
 
     p = sub.add_parser("stock-out", help="ثبت خروج/مصرف کالا از انبار")
-    p.add_argument("--warehouse", required=True)
+    p.add_argument("--warehouse", default=DEFAULT_WAREHOUSE, help=f"پیش‌فرض: {DEFAULT_WAREHOUSE}")
     p.add_argument("--item", required=True)
     p.add_argument("--qty", type=float, required=True)
     p.add_argument("--note", default="")
     p.set_defaults(func=cmd_stock_out)
 
     p = sub.add_parser("transfer", help="انتقال کالا بین دو انبار")
-    p.add_argument("--from", required=True, dest="from_wh")
+    p.add_argument("--from", default=DEFAULT_WAREHOUSE, dest="from_wh", help=f"پیش‌فرض: {DEFAULT_WAREHOUSE}")
     p.add_argument("--to", required=True, dest="to_wh")
     p.add_argument("--item", required=True)
     p.add_argument("--qty", type=float, required=True)
@@ -287,7 +312,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_low_stock)
 
     p = sub.add_parser("request-purchase", help="ثبت درخواست خرید (با چک خودکار انبارهای دیگر)")
-    p.add_argument("--warehouse", required=True)
+    p.add_argument("--warehouse", default=DEFAULT_WAREHOUSE, help=f"پیش‌فرض: {DEFAULT_WAREHOUSE}")
     p.add_argument("--item", required=True)
     p.add_argument("--qty", type=float, required=True)
     p.add_argument("--note", default="")

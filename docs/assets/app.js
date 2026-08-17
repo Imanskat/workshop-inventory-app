@@ -3,6 +3,15 @@
 const API_BASE = "https://script.google.com/macros/s/AKfycbypLxCtrFW8zGrwiJpVLwhBF0B9FSHz_k-2AkxsqFl4aRTWfjsIRv3_QM-aw8rqKNub/exec";
 const SESSION_KEY = "inv_session";
 
+// محل نگهداری پیش‌فرض — هر جا انبار مشخص نشده باشد همین انتخاب می‌شود.
+// باید مو‌به‌مو با DEFAULT_WAREHOUSE در webapp/Code.gs و tools/sheets_client.py یکی باشد.
+const DEFAULT_WAREHOUSE = "انبار شماره ۱";
+
+/** انبار کاربر؛ اگر ثبت نشده باشد، محل نگهداری پیش‌فرض. */
+function warehouseOf(session) {
+  return (session && session.warehouse ? session.warehouse : "").trim() || DEFAULT_WAREHOUSE;
+}
+
 function getSession() {
   try {
     return JSON.parse(localStorage.getItem(SESSION_KEY));

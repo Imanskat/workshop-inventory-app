@@ -118,7 +118,7 @@
   const session = requireSession();
   if (session && session.role !== "admin") {
     toast("شما به پنل مدیریت دسترسی ندارید.", "err");
-    window.location.href = `workshop.html?wh=${encodeURIComponent(session.warehouse)}`;
+    window.location.href = `workshop.html?wh=${encodeURIComponent(warehouseOf(session))}`;
   } else if (session) {
     document.getElementById("userLabel").textContent = session.username + " · ";
   }
@@ -179,10 +179,21 @@
   async function loadWarehousesIntoSelects() {
     try {
       const warehouses = await api("warehouses");
+      const names = warehouses.map((w) => (w.name || "").trim()).filter(Boolean);
+      // محل نگهداری پیش‌فرض همیشه باید در فهرست باشد، حتی اگر هنوز در شیت ثبت نشده
+      if (!names.includes(DEFAULT_WAREHOUSE)) names.unshift(DEFAULT_WAREHOUSE);
+
       ["trFrom", "trTo", "userWarehouse"].forEach((id) => {
         const sel = document.getElementById(id);
-        sel.innerHTML = warehouses.map((w) => `<option value="${escapeHtml(w.name)}">${escapeHtml(w.name)}</option>`).join("");
+        sel.innerHTML = names.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
       });
+
+      // پیش‌فرض: مبدا انتقال و انبارِ کاربر جدید روی محل نگهداری پیش‌فرض
+      document.getElementById("trFrom").value = DEFAULT_WAREHOUSE;
+      document.getElementById("userWarehouse").value = DEFAULT_WAREHOUSE;
+      // مقصد انتقال روی اولین انبار دیگر، تا مبدا و مقصد یکی نباشند
+      const other = names.find((n) => n !== DEFAULT_WAREHOUSE);
+      if (other) document.getElementById("trTo").value = other;
     } catch (err) { toast(err.message, "err"); }
   }
 

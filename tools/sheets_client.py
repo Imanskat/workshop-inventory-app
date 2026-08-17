@@ -25,6 +25,11 @@ ENV_PATH = ROOT / ".env"
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
+# محل نگهداری پیش‌فرض: هر جا انبار مشخص نشده باشد، همین انبار در نظر گرفته می‌شود.
+# این مقدار باید مو‌به‌مو با نام انبار در شیت و با DEFAULT_WAREHOUSE در
+# webapp/Code.gs و docs/assets/app.js یکی باشد.
+DEFAULT_WAREHOUSE = "انبار شماره ۱"
+
 SHEET_SCHEMAS = {
     "Warehouses": ["warehouse_name", "location", "contact"],
     "Items": ["item_name", "unit", "min_stock", "category"],
@@ -111,7 +116,18 @@ def ensure_sheet(spreadsheet: gspread.Spreadsheet, name: str) -> gspread.Workshe
 
 
 def ensure_all_sheets(spreadsheet: gspread.Spreadsheet) -> dict:
-    return {name: ensure_sheet(spreadsheet, name) for name in SHEET_SCHEMAS}
+    sheets = {name: ensure_sheet(spreadsheet, name) for name in SHEET_SCHEMAS}
+    ensure_default_warehouse(sheets["Warehouses"])
+    return sheets
+
+
+def ensure_default_warehouse(ws: gspread.Worksheet) -> bool:
+    """ثبت انبار پیش‌فرض در تب Warehouses اگر هنوز نباشد. True یعنی تازه ساخته شد."""
+    existing = get_records(ws)
+    if any((r.get("warehouse_name") or "").strip().casefold() == DEFAULT_WAREHOUSE.casefold() for r in existing):
+        return False
+    ws.append_row([DEFAULT_WAREHOUSE, "", ""])
+    return True
 
 
 def get_records(ws: gspread.Worksheet) -> list:

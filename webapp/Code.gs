@@ -33,6 +33,10 @@ var SHEET_NAMES = {
 
 var SESSION_TTL_SECONDS = 6 * 60 * 60; // 6 ساعت — حداکثر طول عمر cache در Apps Script
 
+// محل نگهداری پیش‌فرض: هر درخواستی که انبار مشخص نکند، روی همین انبار ثبت می‌شود.
+// باید مو‌به‌مو با DEFAULT_WAREHOUSE در tools/sheets_client.py و docs/assets/app.js یکی باشد.
+var DEFAULT_WAREHOUSE = 'انبار شماره ۱';
+
 function AuthError(message) {
   this.name = 'AuthError';
   this.message = message;
@@ -61,6 +65,23 @@ function getUsersSheet_() {
 
 function norm_(v) {
   return (v || '').toString().trim().toLowerCase();
+}
+
+/** نام انبار خالی/نامشخص را به محل نگهداری پیش‌فرض تبدیل می‌کند. */
+function resolveWarehouse_(name) {
+  var trimmed = (name || '').toString().trim();
+  return trimmed || DEFAULT_WAREHOUSE;
+}
+
+/** انبار پیش‌فرض باید همیشه در تب Warehouses باشد تا در لیست‌ها و منوهای پنل دیده شود. */
+function ensureDefaultWarehouse_() {
+  var sheet = getSheet_(SHEET_NAMES.WAREHOUSES);
+  var exists = readRows_(sheet).some(function (r) {
+    return norm_(r.warehouse_name) === norm_(DEFAULT_WAREHOUSE);
+  });
+  if (!exists) {
+    sheet.appendRow([DEFAULT_WAREHOUSE, '', '']);
+  }
 }
 
 function nowIso_() {
@@ -108,6 +129,9 @@ function doGet(e) {
     // همه‌ی action های دیگر نیاز به نشست معتبر دارند
     var session = requireAuth_(p.token);
 
+    // هر جا انبار مشخص نشده باشد، محل نگهداری پیش‌فرض در نظر گرفته می‌شود
+    var wh = resolveWarehouse_(p.warehouse);
+
     switch (action) {
       // ---- فقط خواندن، هر کاربر لاگین‌شده (مدیر یا کارگاه) ----
       case 'warehouses':
@@ -122,20 +146,20 @@ function doGet(e) {
 
       // ---- محدود به انبار خودِ کاربر (مدیر به همه دسترسی دارد) ----
       case 'stock':
-        requireWarehouseAccess_(session, p.warehouse);
-        data = getStockForWarehouse(p.warehouse);
+        requireWarehouseAccess_(session, wh);
+        data = getStockForWarehouse(wh);
         break;
       case 'stockIn':
-        requireWarehouseAccess_(session, p.warehouse);
-        data = stockIn(p.warehouse, p.item, p.qty, p.note);
+        requireWarehouseAccess_(session, wh);
+        data = stockIn(wh, p.item, p.qty, p.note);
         break;
       case 'stockOut':
-        requireWarehouseAccess_(session, p.warehouse);
-        data = stockOut(p.warehouse, p.item, p.qty, p.note);
+        requireWarehouseAccess_(session, wh);
+        data = stockOut(wh, p.item, p.qty, p.note);
         break;
       case 'requestPurchase':
-        requireWarehouseAccess_(session, p.warehouse);
-        data = requestPurchase(p.warehouse, p.item, p.qty, p.note, p.force === 'true');
+        requireWarehouseAccess_(session, wh);
+        data = requestPurchase(wh, p.item, p.qty, p.note, p.force === 'true');
         break;
 
       // ---- فقط مدیر ----
@@ -157,7 +181,8 @@ function doGet(e) {
         break;
       case 'transfer':
         requireRole_(session, 'admin');
-        data = transferStock(p.from, p.to, p.item, p.qty, p.note);
+        // مبدا اگر خالی بماند انبار پیش‌فرض است؛ مقصد باید صریح باشد
+        data = transferStock(resolveWarehouse_(p.from), p.to, p.item, p.qty, p.note);
         break;
       case 'requests':
         requireRole_(session, 'admin');
@@ -169,7 +194,7 @@ function doGet(e) {
         break;
       case 'addUser':
         requireRole_(session, 'admin');
-        data = addUser(p.username, p.password, p.role, p.warehouse);
+        data = addUser(p.username, p.password, p.role, wh);
         break;
       case 'listUsers':
         requireRole_(session, 'admin');
@@ -228,8 +253,10 @@ function requireRole_(session, role) {
 
 function requireWarehouseAccess_(session, warehouse) {
   if (session.role === 'admin') return;
-  if (norm_(session.warehouse) !== norm_(warehouse)) {
-    throw new AuthError('شما فقط به انبار «' + session.warehouse + '» دسترسی دارید.');
+  // کاربری که انبارش ثبت نشده، به محل نگهداری پیش‌فرض تعلق دارد
+  var own = resolveWarehouse_(session.warehouse);
+  if (norm_(own) !== norm_(resolveWarehouse_(warehouse))) {
+    throw new AuthError('شما فقط به انبار «' + own + '» دسترسی دارید.');
   }
 }
 
@@ -237,7 +264,8 @@ function addUser(username, password, role, warehouse) {
   username = (username || '').trim();
   if (!username || !password) throw new Error('یوزرنیم و پسورد الزامی است.');
   if (role !== 'admin' && role !== 'workshop') throw new Error('نقش باید admin یا workshop باشد.');
-  if (role === 'workshop' && !warehouse) throw new Error('برای نقش workshop، انتخاب انبار الزامی است.');
+  // کارگاهی که انبارش انتخاب نشده، به محل نگهداری پیش‌فرض وصل می‌شود
+  warehouse = resolveWarehouse_(warehouse);
 
   var sheet = getUsersSheet_();
   var existing = readRows_(sheet);
@@ -257,6 +285,7 @@ function listUsers() {
 // ---------- Warehouses ----------
 
 function listWarehouses() {
+  ensureDefaultWarehouse_();
   return readRows_(getSheet_(SHEET_NAMES.WAREHOUSES)).map(function (r) {
     return { name: r.warehouse_name, location: r.location, contact: r.contact };
   });
@@ -310,6 +339,13 @@ function findStockRow_(rows, warehouse, item) {
   return null;
 }
 
+/** اگر انبارِ عملیات همان انبار پیش‌فرض است، مطمئن شو در تب Warehouses ثبت شده. */
+function ensureWarehouseRegistered_(warehouse) {
+  if (norm_(warehouse) === norm_(DEFAULT_WAREHOUSE)) {
+    ensureDefaultWarehouse_();
+  }
+}
+
 /** تغییر موجودی یک کالا در یک انبار به‌اندازه‌ی delta (مثبت یا منفی) */
 function applyStockDelta_(sheet, warehouse, item, delta) {
   var rows = readRows_(sheet);
@@ -359,25 +395,32 @@ function searchItemAcrossWarehouses(query) {
 }
 
 function stockIn(warehouse, item, qty, note) {
+  warehouse = resolveWarehouse_(warehouse);
   qty = Number(qty);
-  if (!warehouse || !item || !qty || qty <= 0) throw new Error('انبار، کالا و تعداد (بزرگ‌تر از صفر) الزامی است.');
+  if (!item || !qty || qty <= 0) throw new Error('کالا و تعداد (بزرگ‌تر از صفر) الزامی است.');
+  ensureWarehouseRegistered_(warehouse);
   var newQty = applyStockDelta_(getSheet_(SHEET_NAMES.STOCK), warehouse, item, qty);
   logTransaction_('IN', warehouse, item, qty, '', note);
   return { ok: true, newQty: newQty };
 }
 
 function stockOut(warehouse, item, qty, note) {
+  warehouse = resolveWarehouse_(warehouse);
   qty = Number(qty);
-  if (!warehouse || !item || !qty || qty <= 0) throw new Error('انبار، کالا و تعداد (بزرگ‌تر از صفر) الزامی است.');
+  if (!item || !qty || qty <= 0) throw new Error('کالا و تعداد (بزرگ‌تر از صفر) الزامی است.');
+  ensureWarehouseRegistered_(warehouse);
   var newQty = applyStockDelta_(getSheet_(SHEET_NAMES.STOCK), warehouse, item, -qty);
   logTransaction_('OUT', warehouse, item, qty, '', note);
   return { ok: true, newQty: newQty };
 }
 
 function transferStock(fromWh, toWh, item, qty, note) {
+  fromWh = resolveWarehouse_(fromWh);
   qty = Number(qty);
-  if (!fromWh || !toWh || !item || !qty || qty <= 0) throw new Error('انبار مبدا، مقصد، کالا و تعداد الزامی است.');
+  if (!toWh || !item || !qty || qty <= 0) throw new Error('انبار مقصد، کالا و تعداد الزامی است.');
   if (norm_(fromWh) === norm_(toWh)) throw new Error('انبار مبدا و مقصد نمی‌توانند یکسان باشند.');
+  ensureWarehouseRegistered_(fromWh);
+  ensureWarehouseRegistered_(toWh);
   var sheet = getSheet_(SHEET_NAMES.STOCK);
   applyStockDelta_(sheet, fromWh, item, -qty);
   var newQtyDest = applyStockDelta_(sheet, toWh, item, qty);
@@ -410,8 +453,10 @@ function getLowStock(warehouseFilter) {
 // ---------- Purchase Requests ----------
 
 function requestPurchase(warehouse, item, qty, note, force) {
+  warehouse = resolveWarehouse_(warehouse);
   qty = Number(qty);
-  if (!warehouse || !item || !qty || qty <= 0) throw new Error('انبار، کالا و تعداد الزامی است.');
+  if (!item || !qty || qty <= 0) throw new Error('کالا و تعداد الزامی است.');
+  ensureWarehouseRegistered_(warehouse);
 
   var stockRows = readRows_(getSheet_(SHEET_NAMES.STOCK));
   var availableElsewhere = stockRows.filter(function (r) {

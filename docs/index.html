@@ -36,7 +36,7 @@
   (function () {
     const session = getSession();
     if (session && session.token) {
-      window.location.href = session.role === "admin" ? "admin.html" : `workshop.html?wh=${encodeURIComponent(session.warehouse)}`;
+      window.location.href = session.role === "admin" ? "admin.html" : `workshop.html?wh=${encodeURIComponent(warehouseOf(session))}`;
     }
   })();
 
@@ -50,7 +50,7 @@
       const data = await api("login", { username, password });
       setSession(data);
       toast("ورود موفق بود.", "ok");
-      window.location.href = data.role === "admin" ? "admin.html" : `workshop.html?wh=${encodeURIComponent(data.warehouse)}`;
+      window.location.href = data.role === "admin" ? "admin.html" : `workshop.html?wh=${encodeURIComponent(warehouseOf(data))}`;
     } catch (err) {
       toast(err.message, "err");
       setLoading(btn, false);

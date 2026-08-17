@@ -80,9 +80,10 @@
 <script>
   const session = requireSession();
   // کارگاه فقط به انبار خودش دسترسی دارد؛ مدیر می‌تواند با ?wh= هر انباری را ببیند
-  const WH = session && session.role === "admin" && qs("wh") ? qs("wh") : (session ? session.warehouse : "");
+  // اگر انباری مشخص نشده باشد، محل نگهداری پیش‌فرض در نظر گرفته می‌شود
+  const WH = session && session.role === "admin" && qs("wh") ? qs("wh") : warehouseOf(session);
   if (session) {
-    document.getElementById("whTitle").textContent = WH || "نامشخص";
+    document.getElementById("whTitle").textContent = WH;
     document.getElementById("userLabel").textContent = session.username + " · ";
   }
 
@@ -187,7 +188,8 @@
     setLoading(btn, false);
   });
 
-  if (WH) { loadStock(); loadItemsDatalist(); }
+  // بدون نشست، requireSession خودش به صفحه‌ی ورود برمی‌گرداند و نباید درخواستی برود
+  if (session) { loadStock(); loadItemsDatalist(); }
 </script>
 </body>
 </html>
